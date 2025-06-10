@@ -25,72 +25,169 @@ class DocxProcessor:
         
         return extract_dir
 
-    def get_table_style(self):
-        """Get the table style matching the template"""
-        return '''
-        <style>
-            table {
-                border-collapse: collapse;
-                width: 100%;
-                margin: 20px 0;
-                font-family: Arial, sans-serif;
-            }
-            th, td {
-                border: 1px solid #ddd;
-                padding: 12px;
-                text-align: left;
-            }
-            th {
-                background-color: #f5f5f5;
-                font-weight: bold;
-            }
-            tr:nth-child(even) {
-                background-color: #f9f9f9;
-            }
-            tr:hover {
-                background-color: #f5f5f5;
-            }
-        </style>
-        '''
-
     def process_table(self, docx_path):
-        """Process table from DOCX file and convert to HTML format"""
-        doc = Document(docx_path)
+        """Extract and parse document.xml directly, build HTML table with dynamic structure and inline styles, mapping Word widths to percentages if possible, and only outputting styles/attributes present in the XML."""
+        extract_dir = self.extract_docx_to_xml(docx_path)
+        document_xml = os.path.join(extract_dir, 'word', 'document.xml')
+        tree = ET.parse(document_xml)
+        root = tree.getroot()
+        ns = self.namespaces
+
         html_tables = []
-        
-        # Add style section
-        html_tables.append(self.get_table_style())
-        
-        for table in doc.tables:
-            html_table = ['<table>']
-            
-            # Process header row
-            if table.rows:
-                header_row = table.rows[0]
-                html_table.append('<thead>')
-                html_table.append('<tr>')
-                for cell in header_row.cells:
-                    # Clean and format cell text
-                    cell_text = self.clean_cell_text(cell.text)
-                    html_table.append(f'<th>{cell_text}</th>')
+        for tbl in root.findall('.//w:tbl', ns):
+            tbl_pr = tbl.find('w:tblPr', ns)
+            total_width_twips = None
+            if tbl_pr is not None:
+                tblw = tbl_pr.find('w:tblW', ns)
+                if tblw is not None and tblw.get(f'{{{ns["w"]}}}type') == 'dxa':
+                    w = tblw.get(f'{{{ns["w"]}}}w')
+                    if w and w.isdigit():
+                        total_width_twips = int(w)
+
+            html_table = [
+                '<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%">'
+            ]
+            for tr_idx, tr in enumerate(tbl.findall('w:tr', ns)):
+                row_style = self._get_row_style(tr, ns)
+                # Always add vertical-align: bottom for every row
+                if row_style:
+                    row_style = f'vertical-align: bottom; {row_style}'
+                else:
+                    row_style = 'vertical-align: bottom;'
+                html_table.append(f'<tr{f" style=\"{row_style}\"" if row_style else ""}>')
+                tcs = tr.findall('w:tc', ns)
+                last_cell_double_underline = False
+                is_header_row = (tr_idx == 0)
+                for tc_idx, tc in enumerate(tcs):
+                    cell_text = self._get_cell_text(tc, ns)
+                    cell_style, colspan = self._get_cell_style(tc, ns, total_width_twips, tc_idx, cell_text, is_header_row)
+                    tag = 'td'
+                    attrs = []
+                    if colspan > 1:
+                        attrs.append(f'colspan="{colspan}"')
+                    if cell_style:
+                        attrs.append(f'style="{cell_style}"')
+                    attr_str = ' '.join(attrs)
+                    html_table.append(f'<{tag} {attr_str}>{cell_text}</{tag}>')
+                    # Check for double underline in last cell
+                    if tc_idx == len(tcs) - 1:
+                        props = tc.find('w:tcPr', ns)
+                        if props is not None:
+                            borders = props.find('w:tcBorders', ns)
+                            if borders is not None:
+                                bottom = borders.find('w:bottom', ns)
+                                if bottom is not None and bottom.get(f'{{{ns["w"]}}}val') == 'double':
+                                    last_cell_double_underline = True
+                # Add extra <td> with double border if needed
+                if last_cell_double_underline:
+                    html_table.append('<td style="border-bottom: Black 2.5pt double;"></td>')
                 html_table.append('</tr>')
-                html_table.append('</thead>')
-            
-            # Process data rows
-            html_table.append('<tbody>')
-            for row in table.rows[1:]:
-                html_table.append('<tr>')
-                for cell in row.cells:
-                    # Clean and format cell text
-                    cell_text = self.clean_cell_text(cell.text)
-                    html_table.append(f'<td>{cell_text}</td>')
-                html_table.append('</tr>')
-            html_table.append('</tbody>')
-            
             html_table.append('</table>')
             html_tables.append('\n'.join(html_table))
-        
         return '\n\n'.join(html_tables)
+
+    def _get_row_style(self, tr, ns):
+        props = tr.find('w:trPr', ns)
+        style = []
+        if props is not None:
+            shd = props.find('w:shd', ns)
+            if shd is not None:
+                fill = shd.get(f'{{{ns["w"]}}}fill')
+                if fill and fill != 'auto' and fill != 'FFFFFF':
+                    style.append(f'background-color: #{fill};')
+            # vertical-align is always bottom in your sample, but only add if present
+            # (Word rarely stores this, so usually omitted)
+        return ' '.join(style)
+
+    def _get_cell_style(self, tc, ns, total_width_twips=None, tc_idx=0, cell_text=None, is_header_row=False):
+        props = tc.find('w:tcPr', ns)
+        style = []
+        colspan = 1
+        width_percent = None
+        text_align_found = False
+        if props is not None:
+            # Colspan
+            gridspan = props.find('w:gridSpan', ns)
+            if gridspan is not None:
+                colspan = int(gridspan.get(f'{{{ns["w"]}}}val', '1'))
+            # Width
+            tcw = props.find('w:tcW', ns)
+            if tcw is not None:
+                w = tcw.get(f'{{{ns["w"]}}}w')
+                if w and w.isdigit() and int(w) > 0:
+                    w_twips = int(w)
+                    if total_width_twips and total_width_twips > 0:
+                        width_percent = 100 * w_twips / total_width_twips
+                        style.append(f'width: {width_percent:.0f}%;')
+                    else:
+                        width_pt = w_twips / 20
+                        style.append(f'width: {width_pt:.1f}pt;')
+            # Background
+            shd = props.find('w:shd', ns)
+            if shd is not None:
+                fill = shd.get(f'{{{ns["w"]}}}fill')
+                if fill and fill != 'auto' and fill != 'FFFFFF':
+                    style.append(f'background-color: #{fill};')
+            # Borders
+            borders = props.find('w:tcBorders', ns)
+            if borders is not None:
+                for side in ['top', 'bottom', 'left', 'right']:
+                    el = borders.find(f'w:{side}', ns)
+                    if el is not None:
+                        val = el.get(f'{{{ns["w"]}}}val')
+                        sz = el.get(f'{{{ns["w"]}}}sz')
+                        color = el.get(f'{{{ns["w"]}}}color', '000000')
+                        if val in ['single', 'double']:
+                            thickness = '1pt' if val == 'single' else '2.5pt double'
+                            style.append(f'border-{side}: Black {thickness} solid;')
+            # Alignment
+            jc = props.find('w:jc', ns)
+            if jc is not None:
+                align = jc.get(f'{{{ns["w"]}}}val', 'right')
+                text_align_found = True
+                if align == 'center':
+                    style.append('text-align: center;')
+                elif align == 'left':
+                    style.append('text-align: left;')
+                else:
+                    style.append('text-align: right;')
+            # Padding (tcMar)
+            tcmar = props.find('w:tcMar', ns)
+            if tcmar is not None:
+                for side in ['top', 'bottom', 'left', 'right']:
+                    mar = tcmar.find(f'w:{side}', ns)
+                    if mar is not None:
+                        w = mar.get(f'{{{ns["w"]}}}w')
+                        if w and w.isdigit():
+                            pt = int(w) / 20
+                            style.append(f'padding-{side}: {pt:.1f}pt;')
+        # Force text-align: left for cells with only ')' or '$'
+        if cell_text is not None and cell_text.strip() in [')', '$']:
+            style = [s for s in style if not s.startswith('text-align:')]
+            style.append('text-align: left;')
+        # Default text-align: center for header row if not specified
+        elif is_header_row and not text_align_found:
+            style.append('text-align: center;')
+        # Default text-align: right if not specified, except for first column
+        elif not text_align_found:
+            if tc_idx == 0:
+                style.append('text-align: left;')
+            else:
+                style.append('text-align: right;')
+        return ' '.join(style), colspan
+
+    def _get_cell_text(self, tc, ns):
+        # Walk through each <w:r> in order, and for each run, process its children in order
+        texts = []
+        for run in tc.findall('.//w:r', ns):
+            for child in list(run):
+                tag = child.tag
+                if tag == f'{{{ns["w"]}}}t':
+                    texts.append(child.text or '')
+                elif tag == f'{{{ns["w"]}}}br':
+                    texts.append('<br/>')
+        text = self.clean_cell_text(''.join(texts))
+        return text
 
     def clean_cell_text(self, text):
         """Clean and format cell text"""
@@ -101,9 +198,11 @@ class DocxProcessor:
         text = re.sub(r'\s+', ' ', text.strip())
         
         # Handle special characters
+        text = text.replace('<br/>', '___BR___')
         text = text.replace('&', '&amp;')
         text = text.replace('<', '&lt;')
         text = text.replace('>', '&gt;')
+        text = text.replace('___BR___', '<br/>')
         
         return text
 
