@@ -54,13 +54,23 @@ class DocxProcessor:
                     row_style = f'vertical-align: bottom; {row_style}'
                 else:
                     row_style = 'vertical-align: bottom;'
-                html_table.append(f'<tr{f" style=\"{row_style}\"" if row_style else ""}>')
                 tcs = tr.findall('w:tc', ns)
+                row_cells = []
                 last_cell_double_underline = False
-                is_header_row = (tr_idx == 0)
                 for tc_idx, tc in enumerate(tcs):
                     cell_text = self._get_cell_text(tc, ns)
-                    cell_style, colspan = self._get_cell_style(tc, ns, total_width_twips, tc_idx, cell_text, is_header_row)
+                    row_cells.append(cell_text)
+                # Check if all cells are empty
+                all_empty = all(cell.strip() == '' for cell in row_cells)
+                # Add min-height if all cells are empty and fill with &nbsp;
+                tr_style = row_style
+                if all_empty:
+                    tr_style += ' min-height: 12pt;'
+                    row_cells = ['&#160;' for _ in row_cells]
+                html_table.append(f'<tr{f" style=\"{tr_style}\"" if tr_style else ""}>')
+                for tc_idx, tc in enumerate(tcs):
+                    cell_text = row_cells[tc_idx]
+                    cell_style, colspan = self._get_cell_style(tc, ns, total_width_twips, tc_idx, cell_text)
                     tag = 'td'
                     attrs = []
                     if colspan > 1:
@@ -99,12 +109,15 @@ class DocxProcessor:
             # (Word rarely stores this, so usually omitted)
         return ' '.join(style)
 
-    def _get_cell_style(self, tc, ns, total_width_twips=None, tc_idx=0, cell_text=None, is_header_row=False):
+    def _get_cell_style(self, tc, ns, total_width_twips=None, tc_idx=0, cell_text=None):
         props = tc.find('w:tcPr', ns)
         style = []
         colspan = 1
         width_percent = None
         text_align_found = False
+        bold_found = False
+        # Alignment: Try to get from w:jc in cell or paragraph
+        align = None
         if props is not None:
             # Colspan
             gridspan = props.find('w:gridSpan', ns)
@@ -140,18 +153,35 @@ class DocxProcessor:
                         if val in ['single', 'double']:
                             thickness = '1pt' if val == 'single' else '2.5pt double'
                             style.append(f'border-{side}: Black {thickness} solid;')
-            # Alignment
+            # Alignment from cell properties
             jc = props.find('w:jc', ns)
             if jc is not None:
-                align = jc.get(f'{{{ns["w"]}}}val', 'right')
+                align = jc.get(f'{{{ns["w"]}}}val', None)
+        # If not found in cell, look for first paragraph alignment
+        if align is None:
+            first_p = tc.find('w:p', ns)
+            if first_p is not None:
+                ppr = first_p.find('w:pPr', ns)
+                if ppr is not None:
+                    jc = ppr.find('w:jc', ns)
+                    if jc is not None:
+                        align = jc.get(f'{{{ns["w"]}}}val', None)
+        # Map Word alignment to CSS
+        if align is not None:
+            if align == 'center':
+                style.append('text-align: center;')
                 text_align_found = True
-                if align == 'center':
-                    style.append('text-align: center;')
-                elif align == 'left':
-                    style.append('text-align: left;')
-                else:
-                    style.append('text-align: right;')
-            # Padding (tcMar)
+            elif align == 'left':
+                style.append('text-align: left;')
+                text_align_found = True
+            elif align == 'right':
+                style.append('text-align: right;')
+                text_align_found = True
+            elif align == 'both':
+                style.append('text-align: justify;')
+                text_align_found = True
+        # Padding (tcMar)
+        if props is not None:
             tcmar = props.find('w:tcMar', ns)
             if tcmar is not None:
                 for side in ['top', 'bottom', 'left', 'right']:
@@ -161,13 +191,27 @@ class DocxProcessor:
                         if w and w.isdigit():
                             pt = int(w) / 20
                             style.append(f'padding-{side}: {pt:.1f}pt;')
+            # Check for bold in cell properties
+            cell_bold = props.find('w:b', ns)
+            if cell_bold is not None:
+                bold_found = True
+
+        # Check for bold in run properties
+        for run in tc.findall('.//w:r', ns):
+            runpr = run.find('w:rPr', ns)
+            if runpr is not None and runpr.find('w:b', ns) is not None:
+                bold_found = True
+                break
+
+        # If any part of the cell is bold, apply font-weight: bold
+        if bold_found:
+            if not any(s.startswith('font-weight:') for s in style):
+                style.append('font-weight: bold;')
+
         # Force text-align: left for cells with only ')' or '$'
         if cell_text is not None and cell_text.strip() in [')', '$']:
             style = [s for s in style if not s.startswith('text-align:')]
             style.append('text-align: left;')
-        # Default text-align: center for header row if not specified
-        elif is_header_row and not text_align_found:
-            style.append('text-align: center;')
         # Default text-align: right if not specified, except for first column
         elif not text_align_found:
             if tc_idx == 0:
@@ -180,13 +224,21 @@ class DocxProcessor:
         # Walk through each <w:r> in order, and for each run, process its children in order
         texts = []
         for run in tc.findall('.//w:r', ns):
+            runpr = run.find('w:rPr', ns)
+            is_bold = runpr is not None and runpr.find('w:b', ns) is not None
+            run_text = ''
             for child in list(run):
                 tag = child.tag
                 if tag == f'{{{ns["w"]}}}t':
-                    texts.append(child.text or '')
+                    run_text += child.text or ''
                 elif tag == f'{{{ns["w"]}}}br':
-                    texts.append('<br/>')
+                    run_text += '<br/>'
+            if run_text:
+                texts.append(run_text)
         text = self.clean_cell_text(''.join(texts))
+        # Replace single hyphen or en dash with en dash entity
+        if text.strip() in ['-', '–']:
+            text = '&#8211;'
         return text
 
     def clean_cell_text(self, text):
