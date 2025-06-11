@@ -24,6 +24,53 @@ class DocxProcessor:
             zip_ref.extractall(extract_dir)
         
         return extract_dir
+    
+    def process_plain_text(self, docx_path):
+        """Extract and "parse plain text" from DOCX file, returning a list of paragraphs."""
+        """Note that this method will only process text that is in a <w:p> element. Additional methods may be needed to handle headers, footers, textboxes/shapes, comments,"""
+        """endnotes, fieldcodes, special elements, etc."""
+        extract_dir = self.extract_docx_to_xml(docx_path)
+        document_xml = os.path.join(extract_dir, 'word', 'document.xml')
+        tree = ET.parse(document_xml)
+        root = tree.getroot()
+        ns = self.namespaces
+
+        paragraphs = []
+        for p in root.findall('.//w:p', ns):
+            p_pr = p.find('w:pPr', ns)
+            # Extract pagagraph style
+            if p_pr is not None:
+                # Call helper function here
+                style = {}
+            style_str = '; '.join(f'{k}: {v}' for k, v in style.items())
+            paragraph = [f'<p style="{style_str}">']
+            for run in p.findall('.//w:r', ns):
+                # Further processing of CSS on runs may be needed here
+                run_style = self._get_run_style(run, ns)
+      
+                runpr = run.find('w:rPr', ns)
+                is_bold = runpr is not None and runpr.find('w:b', ns) is not None
+                run_text = ''
+                for child in list(run):
+                    tag = child.tag
+                    if tag == f'{{{ns["w"]}}}t':
+                        #TODO: Put run_text in a span and extract styles and apply them
+
+                        run_text += self.clean_cell_text(child.text or '')
+                    elif tag == f'{{{ns["w"]}}}br':
+                        run_text += '<br/>'
+                if run_text:
+                    if is_bold:
+                        run_text = f'<b>{run_text}</b>'
+                    if run_style:
+                        run_text = f'<span style="{run_style}">{run_text}</span>'
+                    paragraph.append(run_text)
+                # note nesting may need to be properly handled in future
+            paragraph.append('</p>')
+            text = ''.join(paragraph)
+            text = text.replace('–', '&#8211;').replace('—', '&#8212;')
+            paragraphs.append(text)
+        return '\n\n'.join(paragraphs)            
 
     def process_table(self, docx_path):
         """Extract and parse document.xml directly, build HTML table with dynamic structure and inline styles, mapping Word widths to percentages if possible, and only outputting styles/attributes present in the XML."""
@@ -95,6 +142,48 @@ class DocxProcessor:
             html_table.append('</table>')
             html_tables.append('\n'.join(html_table))
         return '\n\n'.join(html_tables)
+    
+    # def _get_paragraph_style(self, p, ns):
+    #     props = p.find('w:pPr', ns)
+    #     if props is not None and props.find
+
+    def _get_run_style(self, r, ns):
+        props = r.find('w:rPr', ns)
+        style = []
+        if props is not None:
+            # Check for vanish
+            if props.find('w:vanish', ns) is not None:
+                style.append('display: none;')
+            
+            # Check for font
+            rfonts = props.find('w:rFonts', ns)
+            if rfonts is not None:
+                font_css = []
+                east_asian = rfonts.get(f'{{{ns["w"]}}}eastAsia')
+                ascii = rfonts.get(f'{{{ns["w"]}}}ascii')
+                if ascii:
+                    font_css.append(f'font-family: {ascii};')
+                if east_asian:
+                    font_css.append(f'font-variant-east-asian: {east_asian};')
+                #TODO: add support for hansi, cs
+                if font_css:
+                    style.append(' '.join(font_css))
+            
+            # Check for bold
+            if props.find('w:b', ns) is not None:
+                style.append('font-weight: bold;')
+            # Check for italic
+            if props.find('w:i', ns) is not None:
+                style.append('font-style: italic;')
+            # Check for underline
+            u = props.find('w:u', ns)
+            if u is not None:
+                val = u.get(f'{{{ns["w"]}}}val')
+                if val == 'single':
+                    style.append('text-decoration: underline;')
+                elif val == 'double':
+                    style.append('text-decoration: underline double;')
+        return ' '.join(style)
 
     def _get_row_style(self, tr, ns):
         props = tr.find('w:trPr', ns)
@@ -308,7 +397,7 @@ class MainWindow(QMainWindow):
         if file_name:
             try:
                 # Process the table
-                html_content = self.processor.process_table(file_name)
+                html_content = self.processor.process_plain_text(file_name)
                 
                 # Save to output.html
                 with open('output.html', 'w', encoding='utf-8') as f:
