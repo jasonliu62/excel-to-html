@@ -36,14 +36,13 @@ class DocxProcessor:
         ns = self.namespaces
 
         paragraphs = []
-        for p in root.findall('w:p', ns):
+        for p in root.findall('.//w:p', ns):
             p_pr = p.find('w:pPr', ns)
             # Extract pagagraph style
             if p_pr is not None:
                 # Call helper function here
-                style = {}
-            style_str = '; '.join(f'{k}: {v}' for k, v in style.items())
-            paragraph = [f'<p style="{style_str}">']
+                style = self._get_paragraph_style(p, ns)
+            paragraph = [f'<p style="{style}">']
             for run in p.findall('w:r', ns):
                 # Further processing of CSS on runs may be needed here
                 run_style = self._get_run_style(run, ns)
@@ -143,9 +142,36 @@ class DocxProcessor:
             html_tables.append('\n'.join(html_table))
         return '\n\n'.join(html_tables)
     
-    # def _get_paragraph_style(self, p, ns):
-    #     props = p.find('w:pPr', ns)
-    #     if props is not None and props.find
+    def _get_paragraph_style(self, p, ns):
+        props = p.find('w:pPr', ns)
+        style = []
+        if props is not None:
+            # Check for pStyle sheet
+            pstyle = props.find('w:pStyle', ns)
+            if pstyle is not None:
+                #TODO: Handle pStyle mapping to CSS
+                pass
+            # Check for text alignment
+            jc = props.find('w:jc', ns)
+            if jc is not None:
+                align = jc.get(f'{{{ns["w"]}}}val', None)
+                if align == 'center':
+                    style.append('text-align: center;')
+                elif align == 'left':
+                    style.append('text-align: left;')
+                elif align == 'right':
+                    style.append('text-align: right;')
+                elif align == 'both':
+                    style.append('text-align: justify;')
+                elif align == 'start':
+                    style.append('text-align: start;')
+                elif align == 'end':
+                    style.append('text-align: end;')
+                else:
+                    style.append('text-align: justify;')
+
+        return ' '.join(style)
+
 
     def _get_run_style(self, r, ns):
         props = r.find('w:rPr', ns)
