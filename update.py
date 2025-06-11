@@ -36,7 +36,7 @@ class DocxProcessor:
         ns = self.namespaces
 
         paragraphs = []
-        for p in root.findall('.//w:p', ns):
+        for p in root.findall('w:p', ns):
             p_pr = p.find('w:pPr', ns)
             # Extract pagagraph style
             if p_pr is not None:
@@ -44,7 +44,7 @@ class DocxProcessor:
                 style = {}
             style_str = '; '.join(f'{k}: {v}' for k, v in style.items())
             paragraph = [f'<p style="{style_str}">']
-            for run in p.findall('.//w:r', ns):
+            for run in p.findall('w:r', ns):
                 # Further processing of CSS on runs may be needed here
                 run_style = self._get_run_style(run, ns)
       
@@ -168,10 +168,67 @@ class DocxProcessor:
                 #TODO: add support for hansi, cs
                 if font_css:
                     style.append(' '.join(font_css))
+            # Check for font size
+            if props.find('w:sz', ns) is not None:
+                sz = props.find('w:sz', ns).get(f'{{{ns["w"]}}}val')
+                if sz and sz.isdigit():
+                    style.append(f'font-size: {int(sz) / 2.0:.1f}pt;') 
+                    # Check for complex script font size
+            # Check for color
+            color = props.find('w:color', ns)
+            if color is not None:
+                val = color.get(f'{{{ns["w"]}}}val')
+                if val and val != 'auto':
+                    style.append(f'color: #{val};')
+
+            # Check for caps 
+            if props.find('w:caps', ns) is not None:
+                style.append('text-transform: uppercase;')
+
+            # Check for small caps
+            if props.find('w:smallCaps', ns) is not None:
+                style.append('font-variant: small-caps;')
+
+            # Check for strike-through
+            if props.find('w:strike', ns) is not None:
+                style.append('text-decoration: line-through;')
+
+            # Check for double strike-through
+            if props.find('w:dstrike', ns) is not None:
+                style.append('text-decoration: line-through double;')
+            
+            # Check for outline 
+            if props.find('w:outline', ns) is not None:
+                style.append('text-decoration: underline;')
+
+            # Check for shadow
+            if props.find('w:shadow', ns) is not None:
+                style.append('text-shadow: 1px 1px 2px #888888;')
+            
+            # Check for emboss
+            if props.find('w:emboss', ns) is not None:
+                style.append('text-shadow: 1px 1px 0 #fff, 2px 2px 2px #888;')
+
+            # Check for imprint
+            if props.find('w:imprint', ns) is not None:
+                style.append('text-shadow: 1px 1px 0 #fff, -1px -1px 1px #888;')
+
+            # Check for vertical alignment
+            v_align = props.find('w:vAlign', ns)
+            if v_align is not None:
+                val = v_align.get(f'{{{ns["w"]}}}val')
+                if val == 'top':
+                    style.append('vertical-align: top;')
+                elif val == 'center':
+                    style.append('vertical-align: middle;')
+                elif val == 'bottom':
+                    style.append('vertical-align: bottom;')
+
             
             # Check for bold
             if props.find('w:b', ns) is not None:
                 style.append('font-weight: bold;')
+                #bold for complex scripts?
             # Check for italic
             if props.find('w:i', ns) is not None:
                 style.append('font-style: italic;')
