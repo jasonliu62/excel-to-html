@@ -58,12 +58,13 @@ class DocxProcessor:
                         run_text += self.clean_cell_text(child.text or '')
                     elif tag == f'{{{ns["w"]}}}br':
                         run_text += '<br/>'
-                if run_text:
-                    if is_bold:
-                        run_text = f'<b>{run_text}</b>'
-                    if run_style:
-                        run_text = f'<span style="{run_style}">{run_text}</span>'
-                    paragraph.append(run_text)
+                if run_text is '':
+                    run_text = '&#160'
+                if is_bold:
+                    run_text = f'<b>{run_text}</b>'
+                if run_style:
+                    run_text = f'<span style="{run_style}">{run_text}</span>'
+                paragraph.append(run_text)
                 # note nesting may need to be properly handled in future
             paragraph.append('</p>')
             text = ''.join(paragraph)
@@ -151,6 +152,11 @@ class DocxProcessor:
             if pstyle is not None:
                 #TODO: Handle pStyle mapping to CSS
                 pass
+            rPr = props.find('w:rPr', ns)
+            if rPr is not None:
+                run_style = self._get_run_style(rPr, ns)
+                if run_style:
+                    style.append(run_style)
             # Check for text alignment
             jc = props.find('w:jc', ns)
             if jc is not None:
@@ -216,12 +222,36 @@ class DocxProcessor:
                     style.append('page-break-before: always;')
             # Not sure how to implement framPr, orphan control
             # List handling skipped because it requires looking @ numbering.xml and a html tag instead of CSS styling
-            # 
-            
-
-                        
-
-                
+            numPr = props.find('w:numPr', ns)
+            if numPr is not None:
+                pass
+            # Check for borders
+            borders = props.find('w:pBdr', ns)
+            if borders is not None:
+                for side in ['top', 'bottom', 'left', 'right']:
+                    el = borders.find(f'w:{side}', ns)
+                    if el is not None:
+                        val = el.get(f'{{{ns["w"]}}}val')
+                        sz = el.get(f'{{{ns["w"]}}}sz', '0')
+                        color = el.get(f'{{{ns["w"]}}}color', '000000')
+                        space = el.get(f'{{{ns["w"]}}}space', '0')
+                        css_style = 'solid' if val == 'single' else 'double' if val == 'double' else 'none'
+                        style.append(f'border-{side}: {int(sz)/8.0:.2f}pt {css_style} #{color};')
+                        if int(space) > 0:
+                            style.append(f'margin-{side}: {int(space)}pt;')
+            # Check for shading
+            shd = props.find('w:shd', ns)
+            if shd is not None:
+                fill = shd.get(f'{{{ns["w"]}}}fill')
+                if fill and fill != 'auto' and fill != 'FFFFFF':
+                    style.append(f'background-color: #{fill};')
+            # no need to check for snaptogrid, divId, mirrorIndents
+            # sectPr may need to be handled to determine width of text divs
+            suppressAutoHyphens = props.find('w:suppressAutoHyphens', ns)
+            if suppressAutoHyphens is not None:
+                val = suppressAutoHyphens.get(f'{{{ns["w"]}}}val')
+                if val == 'true':
+                    style.append('hyphens: none;')
 
         return ' '.join(style)
 
