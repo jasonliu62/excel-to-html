@@ -169,6 +169,59 @@ class DocxProcessor:
                     style.append('text-align: end;')
                 else:
                     style.append('text-align: justify;')
+            # Check for spacing
+            spacing = props.find('w:spacing', ns)
+            if spacing is not None:
+                before = spacing.get(f'{{{ns["w"]}}}before')
+                after = spacing.get(f'{{{ns["w"]}}}after')
+                if before and before.isdigit():
+                    style.append(f'margin-top: {int(before) / 20.0:.1f}pt;')
+                if after and after.isdigit():
+                    style.append(f'margin-bottom: {int(after) / 20.0:.1f}pt;')
+                line_rule = spacing.get(f'{{{ns["w"]}}}lineRule')
+                line = spacing.get(f'{{{ns["w"]}}}line')
+                if line_rule == 'exact' and line and line.isdigit():
+                        style.append(f'line-height: {int(line) / 240.0:.1f}pt;')
+                elif line_rule == 'atLeast' and line and line.isdigit():
+                        style.append(f'min-height: {int(line) / 240.0:.1f}pt;')
+                elif line and line.isdigit():
+                    style.append(f'line-height: {int(line) / 240.0:.1f};')
+            # Check for indentation
+            ind = props.find('w:ind', ns)
+            if ind is not None:
+                left = ind.get(f'{{{ns["w"]}}}left')
+                right = ind.get(f'{{{ns["w"]}}}right')
+                first_line = ind.get(f'{{{ns["w"]}}}firstLine')
+                hanging = ind.get(f'{{{ns["w"]}}}hanging')
+                if left and left.isdigit():
+                    style.append(f'margin-left: {int(left) / 20.0:.1f}pt;')
+                if right and right.isdigit():
+                    style.append(f'margin-right: {int(right) / 20.0:.1f}pt;')
+                if first_line and first_line.isdigit():
+                    style.append(f'text-indent: {int(first_line) / 20.0:.1f}pt;')
+                if hanging and hanging.isdigit():
+                    style.append(f'text-indent: -{int(hanging) / 20.0:.1f}pt; margin-left: {int(hanging) / 20.0:.1f}pt;')
+            # Check for contextual spacing
+            context_spacing = props.find('w:contextualSpacing', ns)
+            if context_spacing is not None:
+                val = context_spacing.get(f'{{{ns["w"]}}}val')
+                if val == 'true':
+                    style.append('margin-top: 0; margin-bottom: 0;')
+            # No need to check for keepNext, keepLines, 
+            # Check for page break before
+            page_break_before = props.find('w:pageBreakBefore', ns)
+            if page_break_before is not None:
+                val = page_break_before.get(f'{{{ns["w"]}}}val')
+                if val == 'true':
+                    style.append('page-break-before: always;')
+            # Not sure how to implement framPr, orphan control
+            # List handling skipped because it requires looking @ numbering.xml and a html tag instead of CSS styling
+            # 
+            
+
+                        
+
+                
 
         return ' '.join(style)
 
