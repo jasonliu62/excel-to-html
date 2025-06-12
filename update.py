@@ -70,20 +70,6 @@ class DocxProcessor:
             paragraphs.append(text)
         return '\n\n'.join(paragraphs)            
 
-    def process_hyperlink(self, hyperlink, ns):
-        # Define function to process hyperlinks
-        pass
-
-    def process_run(self, run, ns):
-        # Define function to process runs
-        # Refactor code from process_plain_text into this function
-        pass
-
-    def process_paragraph(self, p, ns):
-        # Define function to process paragraphs
-        # Refactor code from process_plain_text into this function
-        pass
-
     def process_table(self, docx_path):
         """Extract and parse document.xml directly, build HTML table with dynamic structure and inline styles, mapping Word widths to percentages if possible, and only outputting styles/attributes present in the XML."""
         extract_dir = self.extract_docx_to_xml(docx_path)
