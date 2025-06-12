@@ -53,8 +53,6 @@ class DocxProcessor:
                 for child in list(run):
                     tag = child.tag
                     if tag == f'{{{ns["w"]}}}t':
-                        #TODO: Put run_text in a span and extract styles and apply them
-
                         run_text += self.clean_cell_text(child.text or '')
                     elif tag == f'{{{ns["w"]}}}br':
                         run_text += '<br/>'
@@ -501,8 +499,8 @@ class DocxProcessor:
         if not text:
             return ''
         
-        # Remove extra whitespace
-        text = re.sub(r'\s+', ' ', text.strip())
+        # # Remove extra whitespace
+        # text = re.sub(r'\s+', ' ', text.strip())
         
         # Handle special characters
         text = text.replace('<br/>', '___BR___')
