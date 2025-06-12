@@ -25,6 +25,9 @@ class DocxProcessor:
         
         return extract_dir
     
+    # TODO: Move all specific processing of paragraphs/runs to their respective functions
+    # Rename the function below to process_document
+    # Iterate through child elements of <w:body> and call appropriate processing functions
     def process_plain_text(self, docx_path):
         """Extract and "parse plain text" from DOCX file, returning a list of paragraphs."""
         """Note that this method will only process text that is in a <w:p> element. Additional methods may be needed to handle headers, footers, textboxes/shapes, comments,"""
@@ -43,6 +46,8 @@ class DocxProcessor:
                 # Call helper function here
                 style = self._get_paragraph_style(p, ns)
             paragraph = [f'<p style="{style}">']
+            # TODO: Refactor code below to handle hyperlinks
+            # Preferably there should be a handle hyperlinks function and a handle runs function
             for run in p.findall('w:r', ns):
                 # Further processing of CSS on runs may be needed here
                 run_style = self._get_run_style(run, ns)
@@ -69,6 +74,26 @@ class DocxProcessor:
             text = text.replace('–', '&#8211;').replace('—', '&#8212;')
             paragraphs.append(text)
         return '\n\n'.join(paragraphs)            
+
+    def process_hyperlink(self, hyperlink, ns):
+        # Define function to process hyperlinks
+        # TODO: Generate link URL from r:ID in <w:hyperlink>, find the link in document.xml.rels
+        link = ''
+        for run in hyperlink.findall('w:r', ns):
+            html = self.process_run(run, ns)
+        html = f'<a href="#">{html}</a>'
+        return html
+        
+
+    def process_run(self, run, ns):
+        # Define function to process runs
+        # Refactor code from process_plain_text into this function
+        pass
+
+    def process_paragraph(self, p, ns):
+        # Define function to process paragraphs
+        # Refactor code from process_plain_text into this function
+        pass
 
     def process_table(self, docx_path):
         """Extract and parse document.xml directly, build HTML table with dynamic structure and inline styles, mapping Word widths to percentages if possible, and only outputting styles/attributes present in the XML."""
