@@ -88,7 +88,23 @@ class DocxProcessor:
     def process_run(self, run, ns):
         # Define function to process runs
         # Refactor code from process_plain_text into this function
-        pass
+        run_style = self._get_run_style(run, ns)
+        runpr = run.find('w:rPr', ns)
+        is_bold = runpr is not None and runpr.find('w:b', ns) is not None
+        run_text = ''
+        for child in list(run):
+            tag = child.tag
+            if tag == f'{{{ns["w"]}}}t':
+                run_text += self.clean_cell_text(child.text or '')
+            elif tag == f'{{{ns["w"]}}}br':
+                run_text += '<br/>'
+            if run_text is '':
+                run_text = '&#160'
+            if is_bold:
+                run_text = f'<b>{run_text}</b>'
+            if run_style:
+                run_text = f'<span style="{run_style}">{run_text}</span>'
+        return run_text
 
     def process_paragraph(self, p, ns):
         # Define function to process paragraphs
@@ -524,6 +540,7 @@ class DocxProcessor:
         if not text:
             return ''
         
+        #FIXME: Some whitespace may be needed between spans in the same p tag. Check the line below to see if it is really needed.
         # # Remove extra whitespace
         # text = re.sub(r'\s+', ' ', text.strip())
         
