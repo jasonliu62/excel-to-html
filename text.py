@@ -7,7 +7,8 @@ class TextProcessor:
     def __init__(self):
         self.namespaces = {
             'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-            'tbl': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+            'tbl': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
         }
 
     def process_text(self, extract_dir):
@@ -21,7 +22,7 @@ class TextProcessor:
         for child in list(body):
             tag = child.tag
             if tag == f'{{{ns["w"]}}}p':
-                para_html = self.process_paragraph(child, ns)
+                para_html = self.process_paragraph(child, ns, extract_dir)
                 nodes.append(para_html)
             elif tag == f'{{{ns["w"]}}}sectPr':
                 # Skip section properties
@@ -49,7 +50,7 @@ class TextProcessor:
         # For now, treat all lists as unordered lists
         return 'ul'
     
-    def process_paragraph(self, p, ns):
+    def process_paragraph(self, p, ns, extract_dir):
         p_pr = p.find('w:pPr', ns)
         style = self._get_paragraph_style(p, ns) if p_pr is not None else ''
         paragraph = [f'<p style="{style}">']
@@ -61,19 +62,29 @@ class TextProcessor:
                 run_html = self.process_run(child, ns)
                 paragraph.append(run_html)
             elif tag == f'{{{ns["w"]}}}hyperlink':
-                hyperlink_html = self.process_hyperlink(child, ns)
+                hyperlink_html = self.process_hyperlink(child, ns, extract_dir)
                 paragraph.append(hyperlink_html)
         paragraph.append('</p>')
         text = ''.join(paragraph)
         text = text.replace('–', '&#8211;').replace('—', '&#8212;')
         return text
 
-    def process_hyperlink(self, hyperlink, ns):
+    def process_hyperlink(self, hyperlink, ns, extract_dir):
         # TODO: Generate link URL from r:ID in <w:hyperlink>, find the link in document.xml.rels
+        document_xml_rels = os.path.join(extract_dir, 'word', '_rels', 'document.xml.rels')
+        rels_tree = ET.parse(document_xml_rels)
+        rels_root = rels_tree.getroot()
+        relationships = rels_root.findall('.//{http://schemas.openxmlformats.org/package/2006/relationships}Relationship')
+        r_id = hyperlink.get(f'{{{ns["r"]}}}id')
         link = ''
+        for rel in relationships:
+            if rel.get('Id') == r_id:
+                link = rel.get('Target')
+                break
+        html = ''
         for run in hyperlink.findall('w:r', ns):
-            html = self.process_run(run, ns)
-        html = f'<a href="#">{html}</a>'
+            html += self.process_run(run, ns)
+        html = f'<a href="{link}">{html}</a>'
         return html
 
     def process_run(self, run, ns):
