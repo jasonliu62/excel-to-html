@@ -75,6 +75,66 @@ class TableProcessor:
             html_table.append('</table>')
             html_tables.append('\n'.join(html_table))
         return '\n\n'.join(html_tables)
+    
+    def process_table_element(self, tbl, ns):
+        tbl_pr = tbl.find('w:tblPr', ns)
+        total_width_twips = None
+        if tbl_pr is not None:
+            tblw = tbl_pr.find('w:tblW', ns)
+            if tblw is not None and tblw.get(f'{{{ns["w"]}}}type') == 'dxa':
+                w = tblw.get(f'{{{ns["w"]}}}w')
+                if w and w.isdigit():
+                    total_width_twips = int(w)
+        html_table = [
+            '<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%">'
+        ]
+        for tr_idx, tr in enumerate(tbl.findall('w:tr', ns)):
+            row_style = self._get_row_style(tr, ns)
+            # Always add vertical-align: bottom for every row
+            if row_style:
+                row_style = f'vertical-align: bottom; {row_style}'
+            else:
+                row_style = 'vertical-align: bottom;'
+            tcs = tr.findall('w:tc', ns)
+            row_cells = []
+            last_cell_double_underline = False
+            for tc_idx, tc in enumerate(tcs):
+                cell_text = self._get_cell_text(tc, ns)
+                row_cells.append(cell_text)
+            # Check if all cells are empty
+            all_empty = all(cell.strip() == '' for cell in row_cells)
+            # Add min-height if all cells are empty and fill with &nbsp;
+            tr_style = row_style
+            if all_empty:
+                tr_style += ' min-height: 12pt;'
+                row_cells = ['&#160;' for _ in row_cells]
+            html_table.append(f'<tr{f" style=\"{tr_style}\"" if tr_style else ""}>')
+            for tc_idx, tc in enumerate(tcs):
+                cell_text = row_cells[tc_idx]
+                cell_style, colspan = self._get_cell_style(tc, ns, total_width_twips, tc_idx, cell_text)
+                tag = 'td'
+                attrs = []
+                if colspan > 1:
+                    attrs.append(f'colspan="{colspan}"')
+                if cell_style:
+                    attrs.append(f'style="{cell_style}"')
+                attr_str = ' '.join(attrs)
+                html_table.append(f'<{tag} {attr_str}>{cell_text}</{tag}>')
+                # Check for double underline in last cell
+                if tc_idx == len(tcs) - 1:
+                    props = tc.find('w:tcPr', ns)
+                    if props is not None:
+                        borders = props.find('w:tcBorders', ns)
+                        if borders is not None:
+                            bottom = borders.find('w:bottom', ns)
+                            if bottom is not None and bottom.get(f'{{{ns["w"]}}}val') == 'double':
+                                last_cell_double_underline = True
+            # Add extra <td> with double border if needed
+            if last_cell_double_underline:
+                html_table.append('<td style="border-bottom: Black 2.5pt double;"></td>')
+            html_table.append('</tr>')
+        html_table.append('</table>')
+        return '\n\n'.join(html_table)
 
     def _get_row_style(self, tr, ns):
         props = tr.find('w:trPr', ns)

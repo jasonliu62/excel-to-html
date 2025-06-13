@@ -38,7 +38,8 @@ class DocxProcessor:
         if content_type == 'auto':
             # Parse the entire XML file and route each paragraph or table to the appropriate processor
             html_parts = []
-            for element in root:
+            body = root.find(f'{{{ns["w"]}}}body', self.namespaces)
+            for element in list(body):
                 if element.tag == f'{{{ns["w"]}}}p':
                     html_parts.append(self.text_processor.process_paragraph(element, ns))
                 elif element.tag == f'{{{ns["tbl"]}}}tbl':
