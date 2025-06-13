@@ -1,5 +1,4 @@
 import os
-import zipfile
 import xml.etree.ElementTree as ET
 import re
 from util import clean_text
@@ -11,51 +10,49 @@ class TextProcessor:
             'tbl': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
         }
 
-    def process_text(self, docx_path):
-        """Extract and parse plain text from DOCX file, returning a list of paragraphs."""
-        document_xml = os.path.join(docx_path, 'word', 'document.xml')
+    def process_text(self, extract_dir):
+        document_xml = os.path.join(extract_dir, 'word', 'document.xml')
         tree = ET.parse(document_xml)
         root = tree.getroot()
+        body = root.find('w:body', self.namespaces)
         ns = self.namespaces
 
-        paragraphs = []
-        for p in root.findall('.//w:p', ns):
-            paragraphs.append(self.process_paragraph(p, ns))
-        return '\n\n'.join(paragraphs)
+        nodes = []
+        for child in list(body):
+            tag = child.tag
+            if tag == f'{{{ns["w"]}}}p':
+                para_html = self.process_paragraph(child, ns)
+                nodes.append(para_html)
+            elif tag == f'{{{ns["w"]}}}sectPr':
+                # Skip section properties
+                continue
+            # TODO: Handle headers, footers, textboxes/shapes, comments, endnotes, fieldcodes, special elements, etc.
+        return '\n\n'.join(nodes)
 
     def process_paragraph(self, p, ns):
         p_pr = p.find('w:pPr', ns)
+        # Extract paragraph style
         style = self._get_paragraph_style(p, ns) if p_pr is not None else ''
         paragraph = [f'<p style="{style}">']
-        
-        for run in p.findall('w:r', ns):
-            run_style = self._get_run_style(run, ns)
-            runpr = run.find('w:rPr', ns)
-            is_bold = runpr is not None and runpr.find('w:b', ns) is not None
-            run_text = ''
-            
-            for child in list(run):
-                tag = child.tag
-                if tag == f'{{{ns["w"]}}}t':
-                    run_text += clean_text(child.text or '')
-                elif tag == f'{{{ns["w"]}}}br':
-                    run_text += '<br/>'
-            
-            if run_text == '':
-                run_text = '&#160'
-            if is_bold:
-                run_text = f'<b>{run_text}</b>'
-            if run_style:
-                run_text = f'<span style="{run_style}">{run_text}</span>'
-            paragraph.append(run_text)
-
+        # TODO: Refactor code below to handle hyperlinks
+        # Preferably there should be a handle hyperlinks function and a handle runs function
+        for child in list(p):
+            tag = child.tag
+            if tag == f'{{{ns["w"]}}}pPr':
+                continue
+            if tag == f'{{{ns["w"]}}}r':
+                run_html = self.process_run(child, ns)
+                paragraph.append(run_html)
+            elif tag == f'{{{ns["w"]}}}hyperlink':
+                hyperlink_html = self.process_hyperlink(child, ns)
+                paragraph.append(hyperlink_html)
         paragraph.append('</p>')
         text = ''.join(paragraph)
         text = text.replace('–', '&#8211;').replace('—', '&#8212;')
         return text
 
     def process_hyperlink(self, hyperlink, ns):
-        """Process hyperlinks in the document"""
+        # TODO: Generate link URL from r:ID in <w:hyperlink>, find the link in document.xml.rels
         link = ''
         for run in hyperlink.findall('w:r', ns):
             html = self.process_run(run, ns)
@@ -63,34 +60,40 @@ class TextProcessor:
         return html
 
     def process_run(self, run, ns):
-        """Process individual text runs"""
+        # Refactor code from process_plain_text into this function
         run_style = self._get_run_style(run, ns)
+        runpr = run.find('w:rPr', ns)
+        is_bold = runpr is not None and runpr.find('w:b', ns) is not None
         run_text = ''
         for child in list(run):
             tag = child.tag
+            if tag == f'{{{ns["w"]}}}rPr':
+                continue
             if tag == f'{{{ns["w"]}}}t':
                 run_text += clean_text(child.text or '')
             elif tag == f'{{{ns["w"]}}}br':
                 run_text += '<br/>'
+        if run_text == '':
+            run_text = '&#160'
+        if is_bold:
+            run_text = f'<b>{run_text}</b>'
+        if run_style:
+            run_text = f'<span style="{run_style}">{run_text}</span>'
         return run_text
 
     def _get_paragraph_style(self, p, ns):
-        """Extract paragraph styles and convert to CSS"""
         props = p.find('w:pPr', ns)
         style = []
         if props is not None:
-            # Check for pStyle sheet
             pstyle = props.find('w:pStyle', ns)
             if pstyle is not None:
-                #TODO: Handle pStyle mapping to CSS
+                # TODO: Handle pStyle mapping to CSS
                 pass
             rPr = props.find('w:rPr', ns)
             if rPr is not None:
                 run_style = self._get_run_style(rPr, ns)
                 if run_style:
                     style.append(run_style)
-            
-            # Text alignment
             jc = props.find('w:jc', ns)
             if jc is not None:
                 align = jc.get(f'{{{ns["w"]}}}val', None)
@@ -108,8 +111,6 @@ class TextProcessor:
                     style.append('text-align: end;')
                 else:
                     style.append('text-align: justify;')
-            
-            # Spacing
             spacing = props.find('w:spacing', ns)
             if spacing is not None:
                 before = spacing.get(f'{{{ns["w"]}}}before')
@@ -126,8 +127,6 @@ class TextProcessor:
                     style.append(f'min-height: {int(line) / 240.0:.1f}pt;')
                 elif line and line.isdigit():
                     style.append(f'line-height: {int(line) / 240.0:.1f};')
-            
-            # Indentation
             ind = props.find('w:ind', ns)
             if ind is not None:
                 left = ind.get(f'{{{ns["w"]}}}left')
@@ -142,22 +141,16 @@ class TextProcessor:
                     style.append(f'text-indent: {int(first_line) / 20.0:.1f}pt;')
                 if hanging and hanging.isdigit():
                     style.append(f'text-indent: -{int(hanging) / 20.0:.1f}pt; margin-left: {int(hanging) / 20.0:.1f}pt;')
-            
-            # Contextual spacing
             context_spacing = props.find('w:contextualSpacing', ns)
             if context_spacing is not None:
                 val = context_spacing.get(f'{{{ns["w"]}}}val')
                 if val == 'true':
                     style.append('margin-top: 0; margin-bottom: 0;')
-            
-            # Page break
             page_break_before = props.find('w:pageBreakBefore', ns)
             if page_break_before is not None:
                 val = page_break_before.get(f'{{{ns["w"]}}}val')
                 if val == 'true':
                     style.append('page-break-before: always;')
-            
-            # Borders
             borders = props.find('w:pBdr', ns)
             if borders is not None:
                 for side in ['top', 'bottom', 'left', 'right']:
@@ -171,33 +164,24 @@ class TextProcessor:
                         style.append(f'border-{side}: {int(sz)/8.0:.2f}pt {css_style} #{color};')
                         if int(space) > 0:
                             style.append(f'margin-{side}: {int(space)}pt;')
-            
-            # Shading
             shd = props.find('w:shd', ns)
             if shd is not None:
                 fill = shd.get(f'{{{ns["w"]}}}fill')
                 if fill and fill != 'auto' and fill != 'FFFFFF':
                     style.append(f'background-color: #{fill};')
-            
-            # Hyphens
             suppressAutoHyphens = props.find('w:suppressAutoHyphens', ns)
             if suppressAutoHyphens is not None:
                 val = suppressAutoHyphens.get(f'{{{ns["w"]}}}val')
                 if val == 'true':
                     style.append('hyphens: none;')
-
         return ' '.join(style)
 
     def _get_run_style(self, r, ns):
-        """Extract run styles and convert to CSS"""
         props = r.find('w:rPr', ns)
         style = []
         if props is not None:
-            # Vanish
             if props.find('w:vanish', ns) is not None:
                 style.append('display: none;')
-            
-            # Font
             rfonts = props.find('w:rFonts', ns)
             if rfonts is not None:
                 font_css = []
@@ -209,21 +193,15 @@ class TextProcessor:
                     font_css.append(f'font-variant-east-asian: {east_asian};')
                 if font_css:
                     style.append(' '.join(font_css))
-            
-            # Font size
             if props.find('w:sz', ns) is not None:
                 sz = props.find('w:sz', ns).get(f'{{{ns["w"]}}}val')
                 if sz and sz.isdigit():
                     style.append(f'font-size: {int(sz) / 2.0:.1f}pt;')
-            
-            # Color
             color = props.find('w:color', ns)
             if color is not None:
                 val = color.get(f'{{{ns["w"]}}}val')
                 if val and val != 'auto':
                     style.append(f'color: #{val};')
-
-            # Text transformations
             if props.find('w:caps', ns) is not None:
                 style.append('text-transform: uppercase;')
             if props.find('w:smallCaps', ns) is not None:
@@ -240,8 +218,6 @@ class TextProcessor:
                 style.append('text-shadow: 1px 1px 0 #fff, 2px 2px 2px #888;')
             if props.find('w:imprint', ns) is not None:
                 style.append('text-shadow: 1px 1px 0 #fff, -1px -1px 1px #888;')
-
-            # Vertical alignment
             v_align = props.find('w:vAlign', ns)
             if v_align is not None:
                 val = v_align.get(f'{{{ns["w"]}}}val')
@@ -251,14 +227,10 @@ class TextProcessor:
                     style.append('vertical-align: middle;')
                 elif val == 'bottom':
                     style.append('vertical-align: bottom;')
-
-            # Font styles
             if props.find('w:b', ns) is not None:
                 style.append('font-weight: bold;')
             if props.find('w:i', ns) is not None:
                 style.append('font-style: italic;')
-            
-            # Underline
             u = props.find('w:u', ns)
             if u is not None:
                 val = u.get(f'{{{ns["w"]}}}val')
@@ -266,5 +238,4 @@ class TextProcessor:
                     style.append('text-decoration: underline;')
                 elif val == 'double':
                     style.append('text-decoration: underline double;')
-        
         return ' '.join(style) 
