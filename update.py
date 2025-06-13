@@ -36,44 +36,22 @@ class DocxProcessor:
         document_xml = os.path.join(extract_dir, 'word', 'document.xml')
         tree = ET.parse(document_xml)
         root = tree.getroot()
+        body = root.find('w:body', self.namespaces)
         ns = self.namespaces
 
-        paragraphs = []
-        for p in root.findall('.//w:p', ns):
-            p_pr = p.find('w:pPr', ns)
-            # Extract pagagraph style
-            if p_pr is not None:
-                # Call helper function here
-                style = self._get_paragraph_style(p, ns)
-            paragraph = [f'<p style="{style}">']
-            # TODO: Refactor code below to handle hyperlinks
-            # Preferably there should be a handle hyperlinks function and a handle runs function
-            for run in p.findall('w:r', ns):
-                # Further processing of CSS on runs may be needed here
-                run_style = self._get_run_style(run, ns)
-      
-                runpr = run.find('w:rPr', ns)
-                is_bold = runpr is not None and runpr.find('w:b', ns) is not None
-                run_text = ''
-                for child in list(run):
-                    tag = child.tag
-                    if tag == f'{{{ns["w"]}}}t':
-                        run_text += self.clean_cell_text(child.text or '')
-                    elif tag == f'{{{ns["w"]}}}br':
-                        run_text += '<br/>'
-                if run_text is '':
-                    run_text = '&#160'
-                if is_bold:
-                    run_text = f'<b>{run_text}</b>'
-                if run_style:
-                    run_text = f'<span style="{run_style}">{run_text}</span>'
-                paragraph.append(run_text)
-                # note nesting may need to be properly handled in future
-            paragraph.append('</p>')
-            text = ''.join(paragraph)
-            text = text.replace('–', '&#8211;').replace('—', '&#8212;')
-            paragraphs.append(text)
-        return '\n\n'.join(paragraphs)            
+        nodes = []
+        for child in list(body):
+            tag = child.tag
+            if tag == f'{{{ns["w"]}}}p':
+                para_html = self.process_paragraph(child, ns)
+                nodes.append(para_html)
+            elif tag == f'{{{ns["w"]}}}tbl':
+                table_html = self.process_table_refactor(child, ns)
+                nodes.append(table_html)
+            elif tag == f'{{{ns["w"]}}}sectPr':
+                # Skip section properties
+                continue
+        return '\n\n'.join(nodes)      
 
     def process_hyperlink(self, hyperlink, ns):
         # Define function to process hyperlinks
@@ -94,6 +72,8 @@ class DocxProcessor:
         run_text = ''
         for child in list(run):
             tag = child.tag
+            if tag == f'{{{ns["w"]}}}rPr':
+                continue
             if tag == f'{{{ns["w"]}}}t':
                 run_text += self.clean_cell_text(child.text or '')
             elif tag == f'{{{ns["w"]}}}br':
@@ -109,7 +89,90 @@ class DocxProcessor:
     def process_paragraph(self, p, ns):
         # Define function to process paragraphs
         # Refactor code from process_plain_text into this function
-        pass
+        p_pr = p.find('w:pPr', ns)
+            # Extract pagagraph style
+        if p_pr is not None:
+            # Call helper function here
+            style = self._get_paragraph_style(p, ns)
+        paragraph = [f'<p style="{style}">']
+        # TODO: Refactor code below to handle hyperlinks
+        # Preferably there should be a handle hyperlinks function and a handle runs function
+        for child in list(p):
+            tag = child.tag
+            if tag == f'{{{ns["w"]}}}pPr':
+                continue
+            if tag == f'{{{ns["w"]}}}r':
+                run_html = self.process_run(child, ns)
+                paragraph.append(run_html)
+            elif tag == f'{{{ns["w"]}}}hyperlink':
+                hyperlink_html = self.process_hyperlink(child, ns)
+                paragraph.append(hyperlink_html)
+        paragraph.append('</p>')
+        text = ''.join(paragraph)
+        text = text.replace('–', '&#8211;').replace('—', '&#8212;')
+        return text
+    
+    def process_table_refactor(self, tbl, ns):
+        tbl_pr = tbl.find('w:tblPr', ns)
+        total_width_twips = None
+        if tbl_pr is not None:
+            tblw = tbl_pr.find('w:tblW', ns)
+            if tblw is not None and tblw.get(f'{{{ns["w"]}}}type') == 'dxa':
+                w = tblw.get(f'{{{ns["w"]}}}w')
+                if w and w.isdigit():
+                    total_width_twips = int(w)
+        html_table = [
+            '<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%">'
+        ]
+        for tr_idx, tr in enumerate(tbl.findall('w:tr', ns)):
+            row_style = self._get_row_style(tr, ns)
+            # Always add vertical-align: bottom for every row
+            if row_style:
+                row_style = f'vertical-align: bottom; {row_style}'
+            else:
+                row_style = 'vertical-align: bottom;'
+            tcs = tr.findall('w:tc', ns)
+            row_cells = []
+            last_cell_double_underline = False
+            for tc_idx, tc in enumerate(tcs):
+                cell_text = self._get_cell_text(tc, ns)
+                row_cells.append(cell_text)
+            # Check if all cells are empty
+            all_empty = all(cell.strip() == '' for cell in row_cells)
+            # Add min-height if all cells are empty and fill with &nbsp;
+            tr_style = row_style
+            if all_empty:
+                tr_style += ' min-height: 12pt;'
+                row_cells = ['&#160;' for _ in row_cells]
+            html_table.append(f'<tr{f" style=\"{tr_style}\"" if tr_style else ""}>')
+            for tc_idx, tc in enumerate(tcs):
+                cell_text = row_cells[tc_idx]
+                cell_style, colspan = self._get_cell_style(tc, ns, total_width_twips, tc_idx, cell_text)
+                tag = 'td'
+                attrs = []
+                if colspan > 1:
+                    attrs.append(f'colspan="{colspan}"')
+                if cell_style:
+                    attrs.append(f'style="{cell_style}"')
+                attr_str = ' '.join(attrs)
+                html_table.append(f'<{tag} {attr_str}>{cell_text}</{tag}>')
+                # Check for double underline in last cell
+                if tc_idx == len(tcs) - 1:
+                    props = tc.find('w:tcPr', ns)
+                    if props is not None:
+                        borders = props.find('w:tcBorders', ns)
+                        if borders is not None:
+                            bottom = borders.find('w:bottom', ns)
+                            if bottom is not None and bottom.get(f'{{{ns["w"]}}}val') == 'double':
+                                last_cell_double_underline = True
+            # Add extra <td> with double border if needed
+            if last_cell_double_underline:
+                html_table.append('<td style="border-bottom: Black 2.5pt double;"></td>')
+            html_table.append('</tr>')
+        html_table.append('</table>')
+        return '\n\n'.join(html_table)
+
+
 
     def process_table(self, docx_path):
         """Extract and parse document.xml directly, build HTML table with dynamic structure and inline styles, mapping Word widths to percentages if possible, and only outputting styles/attributes present in the XML."""
