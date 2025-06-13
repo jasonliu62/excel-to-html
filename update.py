@@ -10,8 +10,10 @@ class DocxProcessor:
         self.table_processor = TableProcessor()
         self.text_processor = TextProcessor()
         self.namespaces = {
+            # TODO: This dictionary is hardcoded, it may be necessary to use the docx XML  to process all namespaces
             'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-            'tbl': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+            'tbl': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
         }
 
     def extract_docx_to_xml(self, docx_path):
@@ -77,7 +79,7 @@ class DocxProcessor:
                             if child.tag == f'{{{ns["w"]}}}r':
                                 li_content.append(self.text_processor.process_run(child, ns))
                             elif child.tag == f'{{{ns["w"]}}}hyperlink':
-                                li_content.append(self.text_processor.process_hyperlink(child, ns))
+                                li_content.append(self.text_processor.process_hyperlink(child, ns, extract_dir))
                       
                         html_parts.append(f'<li>{"".join(li_content)}</li>')
                         continue
@@ -87,7 +89,7 @@ class DocxProcessor:
                             html_parts.append(f'</{tag}>')
                         prev_ilvl = -1
                         prev_list_tag = None
-                        html_parts.append(self.text_processor.process_paragraph(element, ns))
+                        html_parts.append(self.text_processor.process_paragraph(element, ns, extract_dir))
                 elif element.tag == f'{{{ns["tbl"]}}}tbl':
                     # Assuming list starts outside of table and ends before table starts
                     # May need more robust logic if this assumption does not hold and tables can be inside lists
