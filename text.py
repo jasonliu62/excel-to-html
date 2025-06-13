@@ -29,13 +29,30 @@ class TextProcessor:
             # TODO: Handle headers, footers, textboxes/shapes, comments, endnotes, fieldcodes, special elements, etc.
         return '\n\n'.join(nodes)
 
+    def is_list_paragraph(self, p, ns):
+        p_pr = p.find('w:pPr', ns)
+        if p_pr is not None and p_pr.find('w:numPr', ns) is not None:
+            return True
+        return False
+    
+    def get_list_level(self, p, ns):
+        p_pr = p.find('w:pPr', ns)
+        if p_pr is not None and p_pr.find('w:numPr', ns) is not None:
+            numPr = p_pr.find('w:numPr', ns)
+            ilvl = numPr.find('w:ilvl', ns)
+            if ilvl is not None:
+                return int(ilvl.get(f'{{{ns["w"]}}}val', '0'))
+        return 0
+    
+    def get_list_tag(self, p, ns):
+        # TODO: Determine if the list is ordered or unordered based on numbering.xml
+        # For now, treat all lists as unordered lists
+        return 'ul'
+    
     def process_paragraph(self, p, ns):
         p_pr = p.find('w:pPr', ns)
-        # Extract paragraph style
         style = self._get_paragraph_style(p, ns) if p_pr is not None else ''
         paragraph = [f'<p style="{style}">']
-        # TODO: Refactor code below to handle hyperlinks
-        # Preferably there should be a handle hyperlinks function and a handle runs function
         for child in list(p):
             tag = child.tag
             if tag == f'{{{ns["w"]}}}pPr':
