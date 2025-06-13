@@ -9,20 +9,17 @@ class ConversionWorker(QThread):
     error = pyqtSignal(str)
     progress = pyqtSignal(int)
 
-    def __init__(self, file_path):
+    def __init__(self, file_path, content_type):
         super().__init__()
         self.file_path = file_path
+        self.content_type = content_type
         self.processor = DocxProcessor()
 
     def run(self):
         try:
             self.progress.emit(10)
-            # Extract DOCX to XML
-            extract_dir = self.processor.extract_docx_to_xml(self.file_path)
-            self.progress.emit(30)
-
-            # Process tables
-            html_content = self.processor.process_table(self.file_path)
+            # Process the document
+            html_content = self.processor.process_docx(self.file_path, self.content_type)
             self.progress.emit(70)
 
             # Save output
@@ -40,8 +37,8 @@ class MainWindow(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle('DOCX Table Converter')
-        self.setGeometry(100, 100, 500, 300)
+        self.setWindowTitle('DOCX to HTML Converter')
+        self.setGeometry(100, 100, 500, 400)
 
         # Create central widget and layout
         central_widget = QWidget()
@@ -49,20 +46,19 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central_widget)
 
         # Add title label
-        title_label = QLabel('DOCX Table to HTML Converter')
+        title_label = QLabel('DOCX to HTML Converter')
         title_label.setStyleSheet('font-size: 16px; font-weight: bold; margin: 10px;')
         title_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(title_label)
 
         # Add description label
-        desc_label = QLabel('Convert tables from DOCX files to HTML format matching the template')
+        desc_label = QLabel('Convert DOCX files to HTML format')
         desc_label.setAlignment(Qt.AlignCenter)
         desc_label.setStyleSheet('margin: 10px;')
         layout.addWidget(desc_label)
 
-        # Add file selection button
-        self.select_button = QPushButton('Select DOCX File')
-        self.select_button.setStyleSheet('''
+        # Add buttons
+        button_style = '''
             QPushButton {
                 background-color: #4CAF50;
                 color: white;
@@ -70,13 +66,27 @@ class MainWindow(QMainWindow):
                 border: none;
                 border-radius: 5px;
                 font-size: 14px;
+                margin: 5px;
             }
             QPushButton:hover {
                 background-color: #45a049;
             }
-        ''')
-        self.select_button.clicked.connect(self.select_file)
-        layout.addWidget(self.select_button)
+        '''
+
+        self.auto_button = QPushButton('Convert Auto-Detect')
+        self.auto_button.setStyleSheet(button_style)
+        self.auto_button.clicked.connect(lambda: self.select_file('auto'))
+        layout.addWidget(self.auto_button)
+
+        self.table_button = QPushButton('Convert Tables Only')
+        self.table_button.setStyleSheet(button_style)
+        self.table_button.clicked.connect(lambda: self.select_file('table'))
+        layout.addWidget(self.table_button)
+
+        self.text_button = QPushButton('Convert Text Only')
+        self.text_button.setStyleSheet(button_style)
+        self.text_button.clicked.connect(lambda: self.select_file('text'))
+        layout.addWidget(self.text_button)
 
         # Add status label
         self.status_label = QLabel('No file selected')
@@ -92,7 +102,7 @@ class MainWindow(QMainWindow):
         # Add some spacing at the bottom
         layout.addStretch()
 
-    def select_file(self):
+    def select_file(self, content_type):
         file_name, _ = QFileDialog.getOpenFileName(
             self,
             "Select DOCX File",
@@ -102,12 +112,14 @@ class MainWindow(QMainWindow):
         
         if file_name:
             self.status_label.setText('Processing...')
-            self.select_button.setEnabled(False)
+            self.auto_button.setEnabled(False)
+            self.table_button.setEnabled(False)
+            self.text_button.setEnabled(False)
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(0)
 
             # Create and start worker thread
-            self.worker = ConversionWorker(file_name)
+            self.worker = ConversionWorker(file_name, content_type)
             self.worker.finished.connect(self.conversion_finished)
             self.worker.error.connect(self.conversion_error)
             self.worker.progress.connect(self.update_progress)
@@ -115,13 +127,17 @@ class MainWindow(QMainWindow):
 
     def conversion_finished(self, message):
         self.status_label.setText(message)
-        self.select_button.setEnabled(True)
+        self.auto_button.setEnabled(True)
+        self.table_button.setEnabled(True)
+        self.text_button.setEnabled(True)
         self.progress_bar.setVisible(False)
-        QMessageBox.information(self, 'Success', 'Table conversion completed! Check output.html')
+        QMessageBox.information(self, 'Success', 'Conversion completed! Check output.html')
 
     def conversion_error(self, error_message):
         self.status_label.setText(f'Error: {error_message}')
-        self.select_button.setEnabled(True)
+        self.auto_button.setEnabled(True)
+        self.table_button.setEnabled(True)
+        self.text_button.setEnabled(True)
         self.progress_bar.setVisible(False)
         QMessageBox.critical(self, 'Error', f'An error occurred: {error_message}')
 
