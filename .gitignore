@@ -3,3 +3,5 @@ __pycache__/
 .vscode/
 *.pyc
 cash flow statement_extracted/
+output.html
+
