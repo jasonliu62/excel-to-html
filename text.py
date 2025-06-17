@@ -66,7 +66,6 @@ class TextProcessor:
                 paragraph.append(hyperlink_html)
         paragraph.append('</p>')
         text = ''.join(paragraph)
-        text = text.replace('–', '&#8211;').replace('—', '&#8212;')
         return text
 
     def process_hyperlink(self, hyperlink, ns, extract_dir):
@@ -101,8 +100,6 @@ class TextProcessor:
                 run_text += clean_text(child.text or '')
             elif tag == f'{{{ns["w"]}}}br':
                 run_text += '<br/>'
-        if run_text == '':
-            run_text = '&#160'
         if is_bold:
             run_text = f'<b>{run_text}</b>'
         if run_style:
