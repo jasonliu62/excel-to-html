@@ -277,7 +277,12 @@ class TableProcessor:
                         if val == 'double':
                             border_style.append(f'border-{side}: 2.5pt double #{color};')
                         elif val and val != 'none':
-                            border_style.append(f'border-{side}: {int(sz)/8.0:.2f}pt {css_style} #{color};')
+                            # For empty cells, use #ffffff03, otherwise use default border color
+                            if cell_text and cell_text.strip() == '&#160;':
+                                border_style.append(f'border-{side}: {int(sz)/8.0:.2f}pt {css_style} #ffffff03;')
+                            else:
+                                # For content cells, don't specify color to use default
+                                border_style.append(f'border-{side}: {int(sz)/8.0:.2f}pt {css_style};')
             # Only include padding-bottom if present in DOCX
             tcMar = props.find('w:tcMar', ns)
             if tcMar is not None:
