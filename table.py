@@ -254,8 +254,6 @@ class TableProcessor:
                 align = jc.get(f'{{{ns["w"]}}}val', None)
                 if align == 'center':
                     align_style = 'text-align: center;'
-                elif align == 'left':
-                    align_style = 'text-align: left;'
                 elif align == 'right':
                     align_style = 'text-align: right;'
                 elif align == 'both':
@@ -303,8 +301,6 @@ class TableProcessor:
                         align = jc.get(f'{{{ns["w"]}}}val', None)
                         if align == 'center':
                             align_style = 'text-align: center;'
-                        elif align == 'left':
-                            align_style = 'text-align: left;'
                         elif align == 'right':
                             align_style = 'text-align: right;'
                         elif align == 'both':
@@ -320,10 +316,9 @@ class TableProcessor:
                 clean_text = re.sub(r'<[^>]+>', '', cell_text).strip()
                 if clean_text == '$' or clean_text == ')':
                     align_style = 'text-align: left;'
-                elif tc_idx == 0:
-                    align_style = 'text-align: left;'
                 else:
-                    align_style = 'text-align: right;'
+                    # Default to left alignment as per Word's default
+                    align_style = 'text-align: left;'
         # Compose style in the order: width, background-color, text-align, border, padding-bottom
         if width_style:
             style_parts.append(width_style)
