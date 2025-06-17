@@ -8,7 +8,8 @@ class TableProcessor:
     def __init__(self):
         self.namespaces = {
             'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-            'tbl': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+            'tbl': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
         }
 
     def process_table(self, docx_path):
@@ -61,7 +62,7 @@ class TableProcessor:
                 row_cells = []
                 last_cell_double_underline = False
                 for tc_idx, tc in enumerate(tcs):
-                    cell_text = self._get_cell_text(tc, ns)
+                    cell_text = self._get_cell_text(tc, ns, docx_path)
                     row_cells.append(cell_text)
                 all_empty = all(cell.strip() == '' for cell in row_cells)
                 tr_style = row_style
@@ -95,7 +96,7 @@ class TableProcessor:
             html_tables.append('\n'.join(html_table))
         return '\n\n'.join(html_tables)
     
-    def process_table_element(self, tbl, ns):
+    def process_table_element(self, tbl, ns, extract_dir):
         tbl_pr = tbl.find('w:tblPr', ns)
         total_width_twips = None
         if tbl_pr is not None:
@@ -118,7 +119,7 @@ class TableProcessor:
             row_cells = []
             last_cell_double_underline = False
             for tc_idx, tc in enumerate(tcs):
-                cell_text = self._get_cell_text(tc, ns)
+                cell_text = self._get_cell_text(tc, ns, extract_dir)
                 row_cells.append(cell_text)
             # Check if all cells are empty
             all_empty = all(cell.strip() == '' for cell in row_cells)
@@ -166,7 +167,7 @@ class TableProcessor:
                     style.append(f'background-color: #{fill};')
         return ' '.join(style)
 
-    def _get_cell_text(self, tc, ns):
+    def _get_cell_text(self, tc, ns, extract_dir):
         # Output plain text unless inline style is needed
         html = []
         for p in tc.findall('w:p', ns):
@@ -192,21 +193,8 @@ class TableProcessor:
                     else:
                         para_text.append(run_text)
                 elif tag == f'{{{ns["w"]}}}hyperlink':
-                    for run in child.findall('w:r', ns):
-                        run_style = self._get_run_style(run, ns)
-                        run_text = ''
-                        for rchild in list(run):
-                            rtag = rchild.tag
-                            if rtag == f'{{{ns["w"]}}}t':
-                                run_text += clean_text(rchild.text or '')
-                            elif rtag == f'{{{ns["w"]}}}br':
-                                run_text += '<br/>'
-                        if run_text == '':
-                            run_text = '&#160;'
-                        if run_style and run_text.strip() != '&#160;':
-                            para_text.append(f'<span style="{run_style}">{run_text}</span>')
-                        else:
-                            para_text.append(run_text)
+                    hyperlink_html = self.process_hyperlink(child, ns, extract_dir)
+                    para_text.append(hyperlink_html)
             html.append(''.join(para_text))
         text = ''.join(html)
         text = text.replace('–', '&#8211;').replace('—', '&#8212;')
@@ -489,3 +477,34 @@ class TableProcessor:
                 elif val == 'double':
                     style.append('text-decoration: underline double;')
         return ' '.join(style) 
+    
+    def process_hyperlink(self, hyperlink, ns, extract_dir):
+        # TODO: Generate link URL from r:ID in <w:hyperlink>, find the link in document.xml.rels
+        document_xml_rels = os.path.join(extract_dir, 'word', '_rels', 'document.xml.rels')
+        rels_tree = ET.parse(document_xml_rels)
+        rels_root = rels_tree.getroot()
+        relationships = rels_root.findall('.//{http://schemas.openxmlformats.org/package/2006/relationships}Relationship')
+        r_id = hyperlink.get(f'{{{ns["r"]}}}id')
+        link = ''
+        for rel in relationships:
+            if rel.get('Id') == r_id:
+                link = rel.get('Target')
+                break
+        html = ''
+        for run in hyperlink.findall('w:r', ns):
+            run_style = self._get_run_style(run, ns)
+            run_text = ''
+            for rchild in list(run):
+                rtag = rchild.tag
+                if rtag == f'{{{ns["w"]}}}t':
+                    run_text += clean_text(rchild.text or '')
+                elif rtag == f'{{{ns["w"]}}}br':
+                    run_text += '<br/>'
+            if run_text == '':
+                run_text = '&#160;'
+            if run_style and run_text.strip() != '&#160;':
+                html += f'<span style="{run_style}">{run_text}</span>'
+            else:
+                html += run_text
+        html = f'<a href="{link}">{html}</a>'
+        return html

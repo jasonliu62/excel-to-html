@@ -98,7 +98,7 @@ class DocxProcessor:
                         html_parts.append(f'</{tag}>')
                     prev_ilvl = -1
                     prev_list_tag = None
-                    html_parts.append(self.table_processor.process_table_element(element, ns))
+                    html_parts.append(self.table_processor.process_table_element(element, ns, extract_dir))
             while list_stack:
                 tag, _ = list_stack.pop()
                 html_parts.append(f'</{tag}>')
