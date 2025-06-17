@@ -2,8 +2,8 @@ from unidecode import unidecode
 
 def clean_text(text):
     """Clean and format text for HTML output"""
-    if not text:
-        return ''
+    if text is None or text.strip() == '':
+        return '&#160;'
     text = unidecode(text)
     text = text.replace('<br/>', '___BR___')
     text = text.replace('&', '&amp;')
