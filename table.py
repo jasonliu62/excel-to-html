@@ -279,6 +279,26 @@ class TableProcessor:
                         pt = int(w_val) / 20.0
                         if pt > 0:
                             padding_style = f'padding-bottom: {pt:.1f}pt;'
+            # Add paragraph indentation as cell padding-left if present
+            first_p = tc.find('w:p', ns)
+            if first_p is not None:
+                ppr = first_p.find('w:pPr', ns)
+                if ppr is not None:
+                    ind = ppr.find('w:ind', ns)
+                    if ind is not None:
+                        left = ind.get(f'{{{ns["w"]}}}left')
+                        if left and left.isdigit():
+                            padding_left = int(left) / 20.0
+                            style_parts.append(f'padding-left: {padding_left:.1f}pt;')
+            # Add cell margin left as padding-left if present in <w:tcMar>
+            tcMar = props.find('w:tcMar', ns)
+            if tcMar is not None:
+                left_mar = tcMar.find('w:left', ns)
+                if left_mar is not None:
+                    w_val = left_mar.get(f'{{{ns["w"]}}}w')
+                    if w_val and w_val.isdigit():
+                        pt = int(w_val) / 20.0
+                        style_parts.append(f'padding-left: {pt:.1f}pt;')
         if align is None:
             first_p = tc.find('w:p', ns)
             if first_p is not None:
