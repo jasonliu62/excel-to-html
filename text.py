@@ -9,6 +9,8 @@ class TextProcessor:
             'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
             'tbl': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
             'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+            'v': "urn:schemas-microsoft-com:vml",
+            'o': "urn:schemas-microsoft-com:office:office",
         }
 
     def process_text(self, extract_dir):
@@ -104,10 +106,14 @@ class TextProcessor:
             tag = child.tag
             if tag == f'{{{ns["w"]}}}rPr':
                 continue
-            if tag == f'{{{ns["w"]}}}t':
+            elif tag == f'{{{ns["w"]}}}t':
                 run_text += clean_text(child.text or '')
             elif tag == f'{{{ns["w"]}}}br':
                 run_text += '<br/>'
+            elif tag == f'{{{ns["w"]}}}pict':  
+                hr = child.find('v:rect', ns)
+                if hr is not None and hr.attrib.get(f'{{{ns["o"]}}}hr') == 't':
+                    run_text += '<hr/>'
         if run_style:
             run_text = f'<span style="{run_style}">{run_text}</span>'
         return run_text

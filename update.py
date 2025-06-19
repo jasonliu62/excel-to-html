@@ -14,6 +14,8 @@ class DocxProcessor:
             'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
             'tbl': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
             'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+             'v': "urn:schemas-microsoft-com:vml",
+            'o': "urn:schemas-microsoft-com:office:office",
         }
 
     def extract_docx_to_xml(self, docx_path):
