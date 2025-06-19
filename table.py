@@ -39,9 +39,18 @@ class TableProcessor:
                             w_val = mar.get(f'{{{ns["w"]}}}w')
                             if w_val and w_val.isdigit():
                                 tbl_cellmar[side] = int(w_val) / 20.0  # pt
-
+                # Check if table has a border on the bottom
+                # border-bottom is specified by setting bit 5 of tblLook/@val   
+                style = []
+                tblLook = tbl_pr.find('w:tblLook', ns)
+                if tblLook is not None:
+                    val = tblLook.get(f'{{{ns["w"]}}}val')
+                    val = int(val, 16)
+                    if val & (1 << 5):
+                        style.append('border-bottom: solid black 1.0pt;')
+            style = ' '.join(style)
             html_table = [
-                '<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%">'
+                f'<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%; {style}">'
             ]
             for tr_idx, tr in enumerate(tbl.findall('w:tr', ns)):
                 row_style = self._get_row_style(tr, ns)
@@ -105,8 +114,18 @@ class TableProcessor:
                 w = tblw.get(f'{{{ns["w"]}}}w')
                 if w and w.isdigit():
                     total_width_twips = int(w)
+            # Check if table has a border on the bottom
+            # border-bottom is specified by setting bit 5 of tblLook/@val   
+            style = []
+            tblLook = tbl_pr.find('w:tblLook', ns)
+            if tblLook is not None:
+                val = tblLook.get(f'{{{ns["w"]}}}val')
+                val = int(val, 16)
+                if val & (1 << 5):
+                    style.append('border-bottom: solid black 1.0pt;')
+        style = ' '.join(style)
         html_table = [
-            '<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%">'
+            f'<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%; {style}">'
         ]
         for tr_idx, tr in enumerate(tbl.findall('w:tr', ns)):
             row_style = self._get_row_style(tr, ns)
