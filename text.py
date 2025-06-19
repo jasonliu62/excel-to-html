@@ -99,7 +99,6 @@ class TextProcessor:
         # Refactor code from process_plain_text into this function
         run_style = self._get_run_style(run, ns)
         runpr = run.find('w:rPr', ns)
-        is_bold = runpr is not None and runpr.find('w:b', ns) is not None
         run_text = ''
         for child in list(run):
             tag = child.tag
@@ -109,8 +108,6 @@ class TextProcessor:
                 run_text += clean_text(child.text or '')
             elif tag == f'{{{ns["w"]}}}br':
                 run_text += '<br/>'
-        if is_bold:
-            run_text = f'<b>{run_text}</b>'
         if run_style:
             run_text = f'<span style="{run_style}">{run_text}</span>'
         return run_text
@@ -216,6 +213,8 @@ class TextProcessor:
         if props is not None:
             if props.find('w:vanish', ns) is not None:
                 style.append('display: none;')
+            if props.find('w:b', ns) is not None:
+                style.append('font-weight: bold;')
             rfonts = props.find('w:rFonts', ns)
             if rfonts is not None:
                 font_css = []
