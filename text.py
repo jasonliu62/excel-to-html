@@ -52,8 +52,14 @@ class TextProcessor:
     
     def process_paragraph(self, p, ns, extract_dir):
         p_pr = p.find('w:pPr', ns)
+        paragraph = []
         style = self._get_paragraph_style(p, ns) if p_pr is not None else ''
-        paragraph = [f'<p style="{style}">']
+        isParagraph = p_pr is None or p_pr.find('w:divId', ns) is None
+        if  not isParagraph:
+            # This is actually a div element, not a paragraph
+            paragraph.append(f'<div style="{style}">')
+        else:
+            paragraph.append(f'<p style="{style}">')
         for child in list(p):
             tag = child.tag
             if tag == f'{{{ns["w"]}}}pPr':
@@ -64,7 +70,10 @@ class TextProcessor:
             elif tag == f'{{{ns["w"]}}}hyperlink':
                 hyperlink_html = self.process_hyperlink(child, ns, extract_dir)
                 paragraph.append(hyperlink_html)
-        paragraph.append('</p>')
+        if isParagraph:
+            paragraph.append('</p>')
+        else:
+            paragraph.append('</div>')
         text = ''.join(paragraph)
         return text
 
