@@ -24,6 +24,7 @@ class TableProcessor:
             tbl_pr = tbl.find('w:tblPr', ns)
             total_width_twips = None
             tbl_cellmar = {}
+            style = []
             if tbl_pr is not None:
                 tblw = tbl_pr.find('w:tblW', ns)
                 if tblw is not None and tblw.get(f'{{{ns["w"]}}}type') == 'dxa':
@@ -39,9 +40,11 @@ class TableProcessor:
                             w_val = mar.get(f'{{{ns["w"]}}}w')
                             if w_val and w_val.isdigit():
                                 tbl_cellmar[side] = int(w_val) / 20.0  # pt
-
+            if self._is_page_table(tbl, ns):
+                style.append('border-bottom: solid black 1.0pt;')
+            style = ' '.join(style)
             html_table = [
-                '<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%">'
+                f'<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%; {style}">'
             ]
             for tr_idx, tr in enumerate(tbl.findall('w:tr', ns)):
                 row_style = self._get_row_style(tr, ns)
@@ -99,14 +102,18 @@ class TableProcessor:
     def process_table_element(self, tbl, ns, extract_dir):
         tbl_pr = tbl.find('w:tblPr', ns)
         total_width_twips = None
+        style = []
         if tbl_pr is not None:
             tblw = tbl_pr.find('w:tblW', ns)
             if tblw is not None and tblw.get(f'{{{ns["w"]}}}type') == 'dxa':
                 w = tblw.get(f'{{{ns["w"]}}}w')
                 if w and w.isdigit():
                     total_width_twips = int(w)
+        if self._is_page_table(tbl, ns):
+            style.append('border-bottom: solid black 1.0pt;')
+        style = ' '.join(style)
         html_table = [
-            '<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%">'
+            f'<table cellpadding="0" cellspacing="0" style="font: 10pt Times New Roman, Times, Serif; border-collapse: collapse; width: 100%; {style}">'
         ]
         for tr_idx, tr in enumerate(tbl.findall('w:tr', ns)):
             row_style = self._get_row_style(tr, ns)
@@ -155,6 +162,26 @@ class TableProcessor:
             html_table.append('</tr>')
         html_table.append('</table>')
         return '\n\n'.join(html_table)
+    
+    def _is_page_table(self, tbl, ns):
+        """Check if the table is a page table (header/footer)"""
+        tbl_pr = tbl.find('w:tblPr', ns)
+        if tbl_pr is not None and tbl_pr.find('w:tblBorders', ns) is None:
+            for row in tbl.findall('w:tr', ns):
+                for cell in row.findall('w:tc', ns):
+                    cell_pr = cell.find('w:tcPr', ns)
+                    if cell_pr is not None and cell_pr.find('w:tcBorders', ns) is not None:
+                        return False
+        if len(list(tbl.findall('w:tr', ns))) == 1:
+            row = tbl.find('w:tr', ns)
+            cols = list(row.findall('w:tc', ns))
+            if len(cols) != 3:
+                return False
+            tblW = tbl_pr.find('w:tblW', ns).get(f'{{{ns["w"]}}}w', None)
+            tblW = int(tblW) if tblW and tblW.isdigit() else None
+            if tblW == 5000:
+                return True
+        return False      
 
     def _get_row_style(self, tr, ns):
         props = tr.find('w:trPr', ns)
