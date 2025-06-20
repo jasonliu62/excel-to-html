@@ -198,6 +198,7 @@ class TableProcessor:
         # Output plain text unless inline style is needed
         html = []
         for p in tc.findall('w:p', ns):
+            p_style = self._get_paragraph_style(p, ns)
             para_text = []
             for child in list(p):
                 tag = child.tag
@@ -222,7 +223,10 @@ class TableProcessor:
                 elif tag == f'{{{ns["w"]}}}hyperlink':
                     hyperlink_html = self.process_hyperlink(child, ns, extract_dir)
                     para_text.append(hyperlink_html)
-            html.append(''.join(para_text))
+            if p_style is not None:
+                html.append(f'<p style="{p_style}">{' '.join(para_text)}</p>')
+            else:
+                html.append(''.join(para_text))
         text = ''.join(html)
         text = text.replace('–', '&#8211;').replace('—', '&#8212;')
         # Only output &#160; for empty
